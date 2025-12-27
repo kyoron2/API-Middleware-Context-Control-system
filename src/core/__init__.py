@@ -16,6 +16,7 @@ from .context_manager import (
     SlidingWindowStrategy,
     SummarizationStrategy,
 )
+from .provider_manager import ProviderManager
 
 __all__ = [
     "ConfigLoader",
@@ -32,4 +33,5 @@ __all__ = [
     "TruncationStrategy",
     "SlidingWindowStrategy",
     "SummarizationStrategy",
+    "ProviderManager",
 ]
