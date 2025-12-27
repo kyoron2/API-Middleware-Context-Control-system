@@ -1,0 +1,50 @@
+# API Middleware Context Control Configuration
+
+system:
+  port: 8000
+  log_level: INFO
+  session_ttl: 3600  # seconds
+
+storage:
+  type: memory  # "memory" or "redis"
+  redis_url: redis://localhost:6379
+  redis_db: 0
+
+context:
+  default_max_turns: 10
+  default_max_tokens: 4000
+  default_reduction_mode: truncation  # "truncation", "summarization", "sliding_window"
+  summarization_prompt: |
+    You are a conversation summarizer. Summarize the following conversation concisely, 
+    preserving key information, user intent, and important context. Keep the summary 
+    under {max_tokens} tokens.
+    
+    Conversation:
+    {conversation_text}
+    
+    Summary:
+
+providers:
+  - name: official
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    timeout: 30
+    models:
+      - gpt-4
+      - gpt-3.5-turbo
+      - gpt-4-turbo-preview
+
+model_mappings:
+  - display_name: official/gpt-4
+    provider_name: official
+    actual_model_name: gpt-4
+    context_config:
+      max_turns: 15
+      max_tokens: 6000
+  
+  - display_name: official/gpt-3.5-turbo
+    provider_name: official
+    actual_model_name: gpt-3.5-turbo
+    context_config:
+      max_turns: 10
+      max_tokens: 4000
