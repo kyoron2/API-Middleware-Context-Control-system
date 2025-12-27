@@ -19,6 +19,10 @@
 - Docker 和 Docker Compose（可选）
 - Redis（可选，用于生产环境）
 
+**📖 详细指南**: 查看 [QUICKSTART.md](QUICKSTART.md) 获取 5 分钟快速入门指南。
+
+**📋 部署清单**: 查看 [DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md) 获取完整的部署检查清单。
+
 ### 安装
 
 1. 克隆仓库：
@@ -294,6 +298,7 @@ environment:
 │   └── utils/        # 工具函数
 ├── config/           # 配置文件
 ├── tests/            # 测试文件
+├── docs/             # API 文档
 ├── Dockerfile        # Docker 镜像定义
 └── docker-compose.yml # Docker Compose 配置
 ```
@@ -301,8 +306,20 @@ environment:
 ### 运行测试
 
 ```bash
+# 运行手动测试脚本
+python test_manual.py
+
+# 运行集成测试
 pytest tests/
 ```
+
+### 文档
+
+- **[README.md](README.md)** - 主要文档（本文件）
+- **[QUICKSTART.md](QUICKSTART.md)** - 5 分钟快速入门
+- **[docs/API.md](docs/API.md)** - 完整 API 参考
+- **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - 部署检查清单
+- **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - 项目状态和完成度
 
 ## 许可证
 
