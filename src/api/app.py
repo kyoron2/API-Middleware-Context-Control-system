@@ -15,6 +15,7 @@ from ..core import (
 )
 from ..models.config import AppConfig
 from ..models.openai import ErrorResponse, ErrorDetail
+from ..utils import setup_logging, logger
 
 
 # Global instances
@@ -36,9 +37,12 @@ async def lifespan(app: FastAPI):
     try:
         app_config = load_config()
         validate_config(app_config)
-        print(f"Configuration loaded successfully")
-        print(f"  - Providers: {len(app_config.providers)}")
-        print(f"  - Models: {len(app_config.model_mappings)}")
+        
+        # Set up logging
+        setup_logging(app_config.system.log_level)
+        logger.info("Configuration loaded successfully",
+                   providers=len(app_config.providers),
+                   models=len(app_config.model_mappings))
     except Exception as e:
         print(f"Failed to load configuration: {e}")
         raise
@@ -57,12 +61,12 @@ async def lifespan(app: FastAPI):
     # Start session cleanup task
     await session_manager.start_cleanup_task()
     
-    print(f"API Middleware started on port {app_config.system.port}")
+    logger.info("API Middleware started", port=app_config.system.port)
     
     yield
     
     # Shutdown
-    print("Shutting down API Middleware...")
+    logger.info("Shutting down API Middleware")
     
     # Stop cleanup task
     await session_manager.stop_cleanup_task()
@@ -70,7 +74,7 @@ async def lifespan(app: FastAPI):
     # Close provider manager HTTP client
     await provider_manager.close()
     
-    print("API Middleware stopped")
+    logger.info("API Middleware stopped")
 
 
 # Create FastAPI app

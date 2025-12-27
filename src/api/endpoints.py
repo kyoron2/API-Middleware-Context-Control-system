@@ -22,6 +22,7 @@ from ..models.openai import (
     ErrorDetail,
 )
 from ..core import SessionManager, ContextManager, ProviderManager
+from ..utils import logger
 
 
 @app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
@@ -37,15 +38,20 @@ async def chat_completions(
     
     OpenAI-compatible endpoint for chat completions
     """
+    # Generate request ID
+    request_id = logger.generate_request_id()
+    
     try:
         # Extract session information from request
-        # Use user field as user_id, generate session_id if not provided
         user_id = request.user or "default"
-        
-        # Generate or extract session_id
-        # For now, we'll use a simple approach: hash of user_id
-        # In production, this should come from the client or be managed differently
         session_id = f"session_{hash(user_id) % 10000}"
+        
+        # Log API call
+        logger.log_api_call(
+            session_id=session_id,
+            model=request.model,
+            message_count=len(request.messages)
+        )
         
         # Get or create session
         session = await session_mgr.get_session(session_id, user_id)
@@ -62,7 +68,6 @@ async def chat_completions(
         if model_mapping and model_mapping.context_config:
             context_config = model_mapping.context_config
         else:
-            # Use default context config
             from ..models.session import ContextConfig
             context_config = ContextConfig(
                 max_turns=config.context.default_max_turns,
@@ -70,11 +75,30 @@ async def chat_completions(
                 reduction_mode=config.context.default_reduction_mode,
             )
         
+        # Track tokens before reduction
+        tokens_before = context_mgr.estimate_tokens(session.conversation_history)
+        messages_before = len(session.conversation_history)
+        
         # Apply context management
         reduced_messages, summary = await context_mgr.apply_strategy(
             session.conversation_history,
             context_config
         )
+        
+        # Track tokens after reduction
+        tokens_after = context_mgr.estimate_tokens(reduced_messages)
+        messages_after = len(reduced_messages)
+        
+        # Log context reduction if it occurred
+        if tokens_before != tokens_after or messages_before != messages_after:
+            logger.log_context_reduction(
+                session_id=session_id,
+                reduction_mode=context_config.reduction_mode,
+                before_tokens=tokens_before,
+                after_tokens=tokens_after,
+                before_messages=messages_before,
+                after_messages=messages_after
+            )
         
         # Store summary in memory zone if generated
         if summary and context_config.memory_zone_enabled:
@@ -106,10 +130,22 @@ async def chat_completions(
             session.total_tokens_used += response.usage.total_tokens
             await session_mgr.update_session(session)
         
+        # Log completion
+        logger.log_completion(
+            session_id=session_id,
+            model=request.model,
+            prompt_tokens=response.usage.prompt_tokens,
+            completion_tokens=response.usage.completion_tokens,
+            total_tokens=response.usage.total_tokens
+        )
+        
         return response
         
     except ValueError as e:
-        # Handle known errors (model not found, provider errors, etc.)
+        # Log error
+        logger.error(f"Request validation error: {str(e)}")
+        
+        # Handle known errors
         raise HTTPException(
             status_code=400,
             detail={
@@ -121,6 +157,9 @@ async def chat_completions(
             }
         )
     except Exception as e:
+        # Log error
+        logger.error(f"Internal error: {str(e)}")
+        
         # Handle unexpected errors
         raise HTTPException(
             status_code=500,
