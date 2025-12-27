@@ -9,6 +9,13 @@ from .session_manager import (
     RedisStorage,
     create_session_manager,
 )
+from .context_manager import (
+    ContextManager,
+    ContextStrategy,
+    TruncationStrategy,
+    SlidingWindowStrategy,
+    SummarizationStrategy,
+)
 
 __all__ = [
     "ConfigLoader",
@@ -20,4 +27,9 @@ __all__ = [
     "InMemoryStorage",
     "RedisStorage",
     "create_session_manager",
+    "ContextManager",
+    "ContextStrategy",
+    "TruncationStrategy",
+    "SlidingWindowStrategy",
+    "SummarizationStrategy",
 ]
