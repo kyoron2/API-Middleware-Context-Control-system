@@ -85,6 +85,7 @@ class ContextDefaultConfig(BaseModel):
     default_max_turns: int = Field(default=10, ge=1)
     default_max_tokens: int = Field(default=4000, ge=100)
     default_reduction_mode: str = "truncation"
+    default_summarization_model: Optional[str] = None
     summarization_prompt: str = ""
 
     @field_validator('default_reduction_mode')

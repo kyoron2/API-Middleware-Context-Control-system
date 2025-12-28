@@ -16,6 +16,7 @@ context:
   default_max_turns: 10
   default_max_tokens: 4000
   default_reduction_mode: truncation
+  default_summarization_model: official/gpt-3.5-turbo  # 如果使用 summarization 模式，需要配置
 
 # 配置多个 API 供应商
 providers:

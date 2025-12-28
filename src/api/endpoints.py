@@ -76,6 +76,7 @@ async def chat_completions(
                 max_turns=config.context.default_max_turns,
                 max_tokens=config.context.default_max_tokens,
                 reduction_mode=config.context.default_reduction_mode,
+                summarization_model=config.context.default_summarization_model,
             )
         
         # Track tokens before reduction

@@ -15,6 +15,7 @@ context:
   default_max_turns: 10
   default_max_tokens: 4000
   default_reduction_mode: truncation  # "truncation", "summarization", "sliding_window"
+  default_summarization_model: official/gpt-3.5-turbo  # Required if default_reduction_mode is "summarization"
   summarization_prompt: |
     You are a conversation summarizer. Summarize the following conversation concisely, 
     preserving key information, user intent, and important context. Keep the summary 

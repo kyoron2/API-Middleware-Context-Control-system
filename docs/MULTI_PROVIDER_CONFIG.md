@@ -303,7 +303,8 @@ model_mappings:
     context_config:
       max_turns: 20
       reduction_mode: summarization
-      summarization_model: official/gpt-3.5-turbo
+      summarization_model: proxy_a/gpt-3.5-turbo  # 必须指定！可以跨供应商
+      memory_zone_enabled: true
 ```
 
 ### 场景 4: 模型名称映射
@@ -410,6 +411,8 @@ context_config:
   max_turns: 20
   max_tokens: 8000
   reduction_mode: summarization
+  summarization_model: provider/gpt-3.5-turbo  # 必须指定！用便宜的模型做摘要
+  memory_zone_enabled: true
 ```
 
 ### 4. 环境变量管理
@@ -501,6 +504,26 @@ model_mappings:
     context_config:  # 添加这个
       max_turns: 20
       max_tokens: 8000
+```
+
+### 问题 5: summarization_model 未配置
+
+**错误**：
+```
+Model mapping 'xxx' uses summarization mode but summarization_model is not configured
+```
+
+**原因**：使用 `summarization` 模式但未指定用于生成摘要的模型
+
+**解决**：
+```yaml
+model_mappings:
+  - display_name: official/gpt-4
+    provider_name: official
+    actual_model_name: gpt-4
+    context_config:
+      reduction_mode: summarization
+      summarization_model: official/gpt-3.5-turbo  # 必须添加！
 ```
 
 ## 总结

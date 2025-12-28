@@ -78,6 +78,13 @@ class ConfigValidator:
 
     def validate_summarization_config(self) -> None:
         """Validate summarization configuration"""
+        # Check global default config
+        if self.config.context.default_reduction_mode == "summarization":
+            if not self.config.context.default_summarization_model:
+                self.errors.append(
+                    "Global context uses summarization mode but default_summarization_model is not configured"
+                )
+        
         # Check if any model mapping uses summarization mode
         for mapping in self.config.model_mappings:
             if mapping.context_config and mapping.context_config.reduction_mode == "summarization":
