@@ -112,6 +112,7 @@ async def chat_completions(
         response = await provider_mgr.route_request(
             model=request.model,
             messages=reduced_messages,
+            session_id=session_id,
             temperature=request.temperature,
             max_tokens=request.max_tokens,
             top_p=request.top_p,

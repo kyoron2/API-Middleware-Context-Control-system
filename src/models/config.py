@@ -61,6 +61,10 @@ class SystemConfig(BaseModel):
     port: int = Field(default=8000, ge=1, le=65535)
     log_level: str = "INFO"
     session_ttl: int = Field(default=3600, ge=60)  # seconds
+    debug_mode: bool = Field(
+        default=False,
+        description="Enable detailed diagnostic logging for response analysis"
+    )
 
     @field_validator('log_level')
     @classmethod

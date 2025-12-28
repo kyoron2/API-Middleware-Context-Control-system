@@ -4,6 +4,7 @@ system:
   port: 8000
   log_level: INFO
   session_ttl: 3600  # seconds
+  debug_mode: false  # Enable detailed diagnostic logging (set to true for debugging response issues)
 
 storage:
   type: memory  # "memory" or "redis"

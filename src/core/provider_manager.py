@@ -16,6 +16,8 @@ from ..models.openai import (
     ErrorResponse,
     ErrorDetail,
 )
+from ..utils.response_diagnostics import ResponseDiagnostics, ResponseType
+from ..utils import logger
 
 
 class ProviderManager:
@@ -94,6 +96,7 @@ class ProviderManager:
         self,
         model: str,
         messages: List[Message],
+        session_id: Optional[str] = None,
         **kwargs
     ) -> ChatCompletionResponse:
         """
@@ -102,6 +105,7 @@ class ProviderManager:
         Args:
             model: Model name
             messages: List of messages
+            session_id: Session ID for logging
             **kwargs: Additional parameters (temperature, max_tokens, etc.)
             
         Returns:
@@ -143,6 +147,38 @@ class ProviderManager:
             
             # Parse response
             response_data = response.json()
+            
+            # [NEW] Diagnostic logging if enabled
+            if self._is_diagnostic_mode():
+                self._log_response_diagnostics(
+                    response_data, 
+                    model, 
+                    messages,
+                    session_id
+                )
+            
+            # [NEW] Always validate and classify response
+            response_type = ResponseDiagnostics.classify_response(response_data)
+            is_valid, missing_fields = ResponseDiagnostics.validate_response_structure(
+                response_data
+            )
+            
+            # [NEW] Log validation results for invalid or empty responses
+            if not is_valid or response_type == ResponseType.EMPTY:
+                logger.log_response_validation(
+                    session_id=session_id or "unknown",
+                    is_valid=is_valid,
+                    missing_fields=missing_fields
+                )
+                
+                # [NEW] Log raw response for debugging
+                content = ResponseDiagnostics.extract_response_content(response_data)
+                logger.log_raw_response(
+                    session_id=session_id or "unknown",
+                    model=model,
+                    response_data=content,
+                    response_type=response_type.value
+                )
             
             # Convert to our response model
             return ChatCompletionResponse(**response_data)
@@ -213,3 +249,61 @@ class ProviderManager:
             Provider or None if not found
         """
         return self.providers.get(name)
+
+    def _is_diagnostic_mode(self) -> bool:
+        """
+        检查是否启用诊断模式
+        
+        Returns:
+            True if diagnostic mode is enabled
+        """
+        return self.config.system.debug_mode
+
+    def _log_response_diagnostics(
+        self,
+        response_data: Dict[str, Any],
+        model: str,
+        messages: List[Message],
+        session_id: Optional[str] = None
+    ) -> None:
+        """
+        记录详细的诊断信息
+        
+        Args:
+            response_data: 原始响应数据
+            model: 模型名称
+            messages: 请求消息列表
+            session_id: 会话 ID
+        """
+        try:
+            # Extract last user message
+            last_user_msg = ""
+            for msg in reversed(messages):
+                if msg.role == "user":
+                    last_user_msg = msg.content
+                    break
+            
+            # Log request context
+            logger.log_request_context(
+                session_id=session_id or "unknown",
+                model=model,
+                last_user_message=last_user_msg,
+                tools_config=None  # TODO: Extract from kwargs if present
+            )
+            
+            # Log full response
+            content = ResponseDiagnostics.extract_response_content(response_data)
+            response_type = ResponseDiagnostics.classify_response(response_data)
+            
+            logger.log_raw_response(
+                session_id=session_id or "unknown",
+                model=model,
+                response_data=content,
+                response_type=response_type.value
+            )
+        except Exception as e:
+            # Diagnostic logging failure should not break requests
+            logger.error(
+                f"Diagnostic logging failed: {str(e)}",
+                session_id=session_id or "unknown"
+            )

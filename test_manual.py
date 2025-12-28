@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Manual test script to verify the application works"""
 
 import os

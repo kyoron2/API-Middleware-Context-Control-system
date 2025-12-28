@@ -4,7 +4,7 @@ import logging
 import json
 import sys
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 import uuid
 
 
@@ -210,6 +210,128 @@ class MiddlewareLogger:
             error_message=error_message,
             **kwargs
         )
+
+    def log_raw_response(
+        self,
+        session_id: str,
+        model: str,
+        response_data: Dict[str, Any],
+        response_type: str,
+        request_id: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        记录原始响应数据
+        
+        Args:
+            session_id: 会话 ID
+            model: 模型名称
+            response_data: 原始响应数据（已提取关键字段）
+            response_type: 响应类型
+            request_id: 请求 ID
+            **kwargs: Additional fields
+        """
+        # 如果提供了 request_id，临时设置它
+        original_request_id = self.request_id
+        if request_id:
+            self.request_id = request_id
+        
+        self.info(
+            "Raw response logged",
+            event_type="raw_response",
+            session_id=session_id,
+            model=model,
+            response_type=response_type,
+            response_data=response_data,
+            **kwargs
+        )
+        
+        # 恢复原始 request_id
+        self.request_id = original_request_id
+
+    def log_response_validation(
+        self,
+        session_id: str,
+        is_valid: bool,
+        missing_fields: List[str],
+        request_id: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        记录响应验证结果
+        
+        Args:
+            session_id: 会话 ID
+            is_valid: 是否有效
+            missing_fields: 缺失的字段列表
+            request_id: 请求 ID
+            **kwargs: Additional fields
+        """
+        # 如果提供了 request_id，临时设置它
+        original_request_id = self.request_id
+        if request_id:
+            self.request_id = request_id
+        
+        # 根据验证结果选择日志级别
+        log_method = self.info if is_valid else self.warning
+        
+        log_method(
+            "Response validation completed" if is_valid else "Response validation failed",
+            event_type="response_validation",
+            session_id=session_id,
+            is_valid=is_valid,
+            missing_fields=missing_fields,
+            **kwargs
+        )
+        
+        # 恢复原始 request_id
+        self.request_id = original_request_id
+
+    def log_request_context(
+        self,
+        session_id: str,
+        model: str,
+        last_user_message: str,
+        tools_config: Optional[Dict[str, Any]],
+        request_id: Optional[str] = None,
+        **kwargs
+    ):
+        """
+        记录请求上下文
+        
+        Args:
+            session_id: 会话 ID
+            model: 模型名称
+            last_user_message: 最后一条用户消息
+            tools_config: 工具配置（如果存在）
+            request_id: 请求 ID
+            **kwargs: Additional fields
+        """
+        # 如果提供了 request_id，临时设置它
+        original_request_id = self.request_id
+        if request_id:
+            self.request_id = request_id
+        
+        # 截断用户消息以避免日志过大
+        from .response_diagnostics import ResponseDiagnostics
+        truncated_message = ResponseDiagnostics.truncate_for_logging(
+            last_user_message, 
+            max_length=500
+        )
+        
+        self.debug(
+            "Request context logged",
+            event_type="request_context",
+            session_id=session_id,
+            model=model,
+            last_user_message=truncated_message,
+            has_tools_config=tools_config is not None,
+            tools_config=tools_config,
+            **kwargs
+        )
+        
+        # 恢复原始 request_id
+        self.request_id = original_request_id
 
 
 def setup_logging(log_level: str = "INFO"):
