@@ -353,6 +353,7 @@ pytest tests/
 - **[QUICKSTART.md](QUICKSTART.md)** - 5 分钟快速入门
 - **[docs/API.md](docs/API.md)** - 完整 API 参考
 - **[docs/STREAMING.md](docs/STREAMING.md)** - 流式传输功能指南
+- **[docs/MULTI_PROVIDER_CONFIG.md](docs/MULTI_PROVIDER_CONFIG.md)** - 多供应商配置指南
 - **[REASONING_MODEL_SUPPORT.md](REASONING_MODEL_SUPPORT.md)** - 思考模型支持文档
 - **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - 部署检查清单
 - **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - 项目状态和完成度

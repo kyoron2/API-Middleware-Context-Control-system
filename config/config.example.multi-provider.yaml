@@ -1,0 +1,155 @@
+# 多供应商配置示例
+# 演示如何配置多个供应商提供相同名称的模型
+
+system:
+  port: 8000
+  log_level: INFO
+  session_ttl: 3600
+  debug_mode: false
+
+storage:
+  type: memory
+  redis_url: redis://localhost:6379
+  redis_db: 0
+
+context:
+  default_max_turns: 10
+  default_max_tokens: 4000
+  default_reduction_mode: truncation
+
+# 配置多个 API 供应商
+providers:
+  # 官方 OpenAI
+  - name: official
+    base_url: https://api.openai.com/v1
+    api_key: ${OPENAI_API_KEY}
+    timeout: 30
+    models:
+      - gpt-4
+      - gpt-3.5-turbo
+      - chatgpt5  # 假设的模型
+
+  # 代理站点 A
+  - name: proxy_a
+    base_url: https://api-proxy-a.example.com/v1
+    api_key: ${PROXY_A_API_KEY}
+    timeout: 30
+    models:
+      - gpt-4
+      - chatgpt5  # 与 official 相同的模型名
+      - claude-3-opus
+
+  # 代理站点 B
+  - name: proxy_b
+    base_url: https://api-proxy-b.example.com/v1
+    api_key: ${PROXY_B_API_KEY}
+    timeout: 30
+    models:
+      - gpt-4
+      - chatgpt5  # 与 official 和 proxy_a 相同的模型名
+      - deepseek-chat
+
+# 模型映射配置
+# 每个模型需要有唯一的 display_name
+model_mappings:
+  # ========== Official OpenAI 模型 ==========
+  - display_name: official/gpt-4
+    provider_name: official
+    actual_model_name: gpt-4
+    context_config:
+      max_turns: 15
+      max_tokens: 8000
+      reduction_mode: truncation
+
+  - display_name: official/gpt-3.5-turbo
+    provider_name: official
+    actual_model_name: gpt-3.5-turbo
+    context_config:
+      max_turns: 10
+      max_tokens: 4000
+      reduction_mode: truncation
+
+  - display_name: official/chatgpt5
+    provider_name: official
+    actual_model_name: chatgpt5
+    context_config:
+      max_turns: 20
+      max_tokens: 10000
+      reduction_mode: sliding_window
+
+  # ========== Proxy A 模型 ==========
+  - display_name: proxy_a/gpt-4
+    provider_name: proxy_a
+    actual_model_name: gpt-4
+    context_config:
+      max_turns: 12
+      max_tokens: 6000
+      reduction_mode: truncation
+
+  - display_name: proxy_a/chatgpt5
+    provider_name: proxy_a
+    actual_model_name: chatgpt5
+    context_config:
+      max_turns: 15
+      max_tokens: 8000
+      reduction_mode: truncation
+
+  - display_name: proxy_a/claude-3-opus
+    provider_name: proxy_a
+    actual_model_name: claude-3-opus
+    context_config:
+      max_turns: 20
+      max_tokens: 12000
+      reduction_mode: sliding_window
+
+  # ========== Proxy B 模型 ==========
+  - display_name: proxy_b/gpt-4
+    provider_name: proxy_b
+    actual_model_name: gpt-4
+    context_config:
+      max_turns: 10
+      max_tokens: 5000
+      reduction_mode: truncation
+
+  - display_name: proxy_b/chatgpt5
+    provider_name: proxy_b
+    actual_model_name: chatgpt5
+    context_config:
+      max_turns: 18
+      max_tokens: 9000
+      reduction_mode: summarization
+      # 使用 proxy_a 的 gpt-3.5-turbo 来做摘要（跨供应商）
+      summarization_model: proxy_a/gpt-3.5-turbo
+
+  - display_name: proxy_b/deepseek-chat
+    provider_name: proxy_b
+    actual_model_name: deepseek-chat
+    context_config:
+      max_turns: 25
+      max_tokens: 15000
+      reduction_mode: sliding_window
+
+# 使用说明：
+# 
+# 1. 调用不同供应商的相同模型：
+#    - official/chatgpt5  -> 使用官方 OpenAI 的 chatgpt5
+#    - proxy_a/chatgpt5   -> 使用代理 A 的 chatgpt5
+#    - proxy_b/chatgpt5   -> 使用代理 B 的 chatgpt5
+#
+# 2. 每个模型可以有不同的上下文配置：
+#    - official/chatgpt5: 20 轮，10000 tokens，滑动窗口
+#    - proxy_a/chatgpt5:  15 轮，8000 tokens，截断
+#    - proxy_b/chatgpt5:  18 轮，9000 tokens，摘要
+#
+# 3. GET /v1/models 会返回所有 9 个模型：
+#    - official/gpt-4
+#    - official/gpt-3.5-turbo
+#    - official/chatgpt5
+#    - proxy_a/gpt-4
+#    - proxy_a/chatgpt5
+#    - proxy_a/claude-3-opus
+#    - proxy_b/gpt-4
+#    - proxy_b/chatgpt5
+#    - proxy_b/deepseek-chat
+#
+# 4. 在 OpenWebUI 中，用户可以看到所有模型并选择使用
