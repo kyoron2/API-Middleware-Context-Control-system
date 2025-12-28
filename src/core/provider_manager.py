@@ -2,7 +2,8 @@
 
 import httpx
 import time
-from typing import List, Tuple, Optional, Dict, Any
+import json
+from typing import List, Tuple, Optional, Dict, Any, AsyncIterator
 from datetime import datetime
 
 from ..models.config import AppConfig, Provider, ModelMapping
@@ -10,7 +11,9 @@ from ..models.openai import (
     Message,
     ChatCompletionRequest,
     ChatCompletionResponse,
+    ChatCompletionStreamResponse,
     Choice,
+    StreamChoice,
     Usage,
     ModelInfo,
     ErrorResponse,
@@ -187,6 +190,124 @@ class ProviderManager:
             # Handle HTTP errors
             error_detail = ErrorDetail(
                 message=f"Provider API error: {e.response.status_code} - {e.response.text}",
+                type="api_error",
+                code=str(e.response.status_code)
+            )
+            raise ValueError(f"Provider '{provider.name}' returned error: {error_detail.message}")
+        
+        except httpx.TimeoutException:
+            error_detail = ErrorDetail(
+                message=f"Request to provider '{provider.name}' timed out",
+                type="timeout_error"
+            )
+            raise ValueError(error_detail.message)
+        
+        except httpx.RequestError as e:
+            error_detail = ErrorDetail(
+                message=f"Failed to connect to provider '{provider.name}': {str(e)}",
+                type="connection_error"
+            )
+            raise ValueError(error_detail.message)
+
+    async def stream_request(
+        self,
+        model: str,
+        messages: List[Message],
+        session_id: Optional[str] = None,
+        **kwargs
+    ) -> AsyncIterator[ChatCompletionStreamResponse]:
+        """
+        Stream chat completion request to appropriate provider
+        
+        Args:
+            model: Model name
+            messages: List of messages
+            session_id: Session ID for logging
+            **kwargs: Additional parameters (temperature, max_tokens, etc.)
+            
+        Yields:
+            ChatCompletionStreamResponse chunks
+            
+        Raises:
+            ValueError: If model or provider not found
+            httpx.HTTPError: If API request fails
+        """
+        # Resolve model to provider
+        provider, actual_model_name = self.resolve_model(model)
+        
+        # Build request payload with stream=true
+        payload = {
+            "model": actual_model_name,
+            "messages": [msg.model_dump() for msg in messages],
+            "stream": True,
+            **kwargs
+        }
+        
+        # Remove None values
+        payload = {k: v for k, v in payload.items() if v is not None}
+        
+        # Make streaming API request
+        client = await self._get_http_client()
+        url = f"{provider.base_url}/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            async with client.stream(
+                "POST",
+                url,
+                json=payload,
+                headers=headers,
+                timeout=provider.timeout
+            ) as response:
+                response.raise_for_status()
+                
+                # Process SSE stream
+                async for line in response.aiter_lines():
+                    # Skip empty lines
+                    if not line.strip():
+                        continue
+                    
+                    # Skip comment lines
+                    if line.startswith(":"):
+                        continue
+                    
+                    # Parse SSE data
+                    if line.startswith("data: "):
+                        data = line[6:]  # Remove "data: " prefix
+                        
+                        # Check for [DONE] message
+                        if data.strip() == "[DONE]":
+                            break
+                        
+                        try:
+                            # Parse JSON chunk
+                            chunk_data = json.loads(data)
+                            
+                            # Convert to our stream response model
+                            chunk = ChatCompletionStreamResponse(**chunk_data)
+                            yield chunk
+                            
+                        except json.JSONDecodeError as e:
+                            logger.error(
+                                f"Failed to parse streaming chunk: {e}",
+                                session_id=session_id or "unknown",
+                                data=data
+                            )
+                            continue
+                        except Exception as e:
+                            logger.error(
+                                f"Failed to process streaming chunk: {e}",
+                                session_id=session_id or "unknown"
+                            )
+                            continue
+                            
+        except httpx.HTTPStatusError as e:
+            # Handle HTTP errors
+            error_detail = ErrorDetail(
+                message=f"Provider API error: {e.response.status_code}",
                 type="api_error",
                 code=str(e.response.status_code)
             )

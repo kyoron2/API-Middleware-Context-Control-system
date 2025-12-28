@@ -73,7 +73,7 @@ Content-Type: application/json
 }
 ```
 
-#### Response
+#### Response (Non-Streaming)
 
 **Success (200 OK)**:
 ```json
@@ -99,6 +99,45 @@ Content-Type: application/json
   }
 }
 ```
+
+#### Response (Streaming)
+
+When `stream: true` is set, the response is returned as Server-Sent Events (SSE).
+
+**Content-Type**: `text/event-stream`
+
+**Stream Format**:
+```
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"official/gpt-4","choices":[{"index":0,"delta":{"role":"assistant","content":"I'm"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"official/gpt-4","choices":[{"index":0,"delta":{"content":" doing"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-123","object":"chat.completion.chunk","created":1677652288,"model":"official/gpt-4","choices":[{"index":0,"delta":{"content":" well"},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+**Stream Chunk Object**:
+```json
+{
+  "id": "chatcmpl-123",
+  "object": "chat.completion.chunk",
+  "created": 1677652288,
+  "model": "official/gpt-4",
+  "choices": [
+    {
+      "index": 0,
+      "delta": {
+        "role": "assistant",  // Only in first chunk
+        "content": "text"     // Incremental content
+      },
+      "finish_reason": null   // "stop" in last chunk
+    }
+  ]
+}
+```
+
+**📖 详细文档**: 查看 [STREAMING.md](STREAMING.md) 获取流式传输完整指南。
 
 **Error Responses**:
 
@@ -161,6 +200,34 @@ const response = await fetch('http://localhost:8000/v1/chat/completions', {
 
 const data = await response.json();
 console.log(data);
+```
+
+**Streaming Example (Python)**:
+```python
+import httpx
+import json
+
+async def stream_chat():
+    async with httpx.AsyncClient() as client:
+        async with client.stream(
+            "POST",
+            "http://localhost:8000/v1/chat/completions",
+            json={
+                "model": "official/gpt-4",
+                "messages": [
+                    {"role": "user", "content": "Tell me a story"}
+                ],
+                "stream": True
+            }
+        ) as response:
+            async for line in response.aiter_lines():
+                if line.startswith("data: "):
+                    data = line[6:]
+                    if data.strip() == "[DONE]":
+                        break
+                    chunk = json.loads(data)
+                    content = chunk["choices"][0]["delta"].get("content", "")
+                    print(content, end="", flush=True)
 ```
 
 ---

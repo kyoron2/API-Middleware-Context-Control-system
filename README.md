@@ -8,6 +8,8 @@
 - 💬 **智能上下文管理** - 自动压缩和管理对话历史
 - 📊 **Token 成本控制** - 通过上下文缩减策略降低 Token 消耗
 - 🔌 **OpenAI API 兼容** - 无缝集成 OpenWebUI 和其他客户端
+- ⚡ **流式传输支持** - 实时流式响应，提供更好的用户体验
+- 🧠 **思考模型支持** - 兼容 DeepSeek-R1、OpenAI o1 等推理模型
 - 📝 **结构化日志** - JSON 格式日志，便于分析和监控
 - 🐳 **Docker 部署** - 容器化部署，易于扩展
 
@@ -155,6 +157,8 @@ OPENAI_API_KEY=sk-your-key-here
 
 ### API 调用示例
 
+#### 非流式请求
+
 ```python
 import httpx
 
@@ -170,6 +174,36 @@ async with httpx.AsyncClient() as client:
     )
     print(response.json())
 ```
+
+#### 流式请求
+
+```python
+import httpx
+import json
+
+async with httpx.AsyncClient() as client:
+    async with client.stream(
+        "POST",
+        "http://localhost:8000/v1/chat/completions",
+        json={
+            "model": "official/gpt-4",
+            "messages": [
+                {"role": "user", "content": "Hello!"}
+            ],
+            "stream": True  # 启用流式传输
+        }
+    ) as response:
+        async for line in response.aiter_lines():
+            if line.startswith("data: "):
+                data = line[6:]
+                if data.strip() == "[DONE]":
+                    break
+                chunk = json.loads(data)
+                content = chunk["choices"][0]["delta"].get("content", "")
+                print(content, end="", flush=True)
+```
+
+**📖 详细文档**: 查看 [docs/STREAMING.md](docs/STREAMING.md) 获取流式传输完整指南。
 
 ## 上下文管理策略
 
@@ -318,6 +352,8 @@ pytest tests/
 - **[README.md](README.md)** - 主要文档（本文件）
 - **[QUICKSTART.md](QUICKSTART.md)** - 5 分钟快速入门
 - **[docs/API.md](docs/API.md)** - 完整 API 参考
+- **[docs/STREAMING.md](docs/STREAMING.md)** - 流式传输功能指南
+- **[REASONING_MODEL_SUPPORT.md](REASONING_MODEL_SUPPORT.md)** - 思考模型支持文档
 - **[DEPLOYMENT_CHECKLIST.md](DEPLOYMENT_CHECKLIST.md)** - 部署检查清单
 - **[PROJECT_STATUS.md](PROJECT_STATUS.md)** - 项目状态和完成度
 

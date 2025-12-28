@@ -2,8 +2,10 @@
 
 import uuid
 import time
+import json
 from typing import List
 from fastapi import Depends, HTTPException
+from fastapi.responses import StreamingResponse
 
 from .app import (
     app,
@@ -25,7 +27,7 @@ from ..core import SessionManager, ContextManager, ProviderManager
 from ..utils import logger
 
 
-@app.post("/v1/chat/completions", response_model=ChatCompletionResponse)
+@app.post("/v1/chat/completions")
 async def chat_completions(
     request: ChatCompletionRequest,
     config: AppConfig = Depends(get_config),
@@ -36,7 +38,8 @@ async def chat_completions(
     """
     Create chat completion
     
-    OpenAI-compatible endpoint for chat completions
+    OpenAI-compatible endpoint for chat completions.
+    Supports both regular and streaming responses.
     """
     # Generate request ID
     request_id = logger.generate_request_id()
@@ -108,7 +111,22 @@ async def chat_completions(
         session.conversation_history = reduced_messages
         await session_mgr.update_session(session)
         
-        # Route request to provider
+        # Check if streaming is requested
+        if request.stream:
+            # Return streaming response
+            return StreamingResponse(
+                _stream_chat_completion(
+                    request=request,
+                    reduced_messages=reduced_messages,
+                    session_id=session_id,
+                    session_mgr=session_mgr,
+                    provider_mgr=provider_mgr,
+                    session=session
+                ),
+                media_type="text/event-stream"
+            )
+        
+        # Route request to provider (non-streaming)
         response = await provider_mgr.route_request(
             model=request.model,
             messages=reduced_messages,
@@ -172,6 +190,133 @@ async def chat_completions(
                 }
             }
         )
+
+
+async def _stream_chat_completion(
+    request: ChatCompletionRequest,
+    reduced_messages: List[Message],
+    session_id: str,
+    session_mgr: SessionManager,
+    provider_mgr: ProviderManager,
+    session
+):
+    """
+    Stream chat completion responses in SSE format
+    
+    Args:
+        request: Original chat completion request
+        reduced_messages: Context-managed messages
+        session_id: Session identifier
+        session_mgr: Session manager instance
+        provider_mgr: Provider manager instance
+        session: Current session object
+    
+    Yields:
+        SSE formatted chunks
+    """
+    try:
+        # Accumulate full response for session history
+        accumulated_content = ""
+        accumulated_reasoning = ""  # For reasoning models like DeepSeek-R1
+        prompt_tokens = 0
+        completion_tokens = 0
+        
+        # Stream from provider
+        async for chunk in provider_mgr.stream_request(
+            model=request.model,
+            messages=reduced_messages,
+            session_id=session_id,
+            temperature=request.temperature,
+            max_tokens=request.max_tokens,
+            top_p=request.top_p,
+            n=request.n,
+            stop=request.stop,
+            presence_penalty=request.presence_penalty,
+            frequency_penalty=request.frequency_penalty,
+            logit_bias=request.logit_bias,
+            user=request.user,
+        ):
+            # Accumulate content from delta
+            # Support both regular content and reasoning content (for thinking models)
+            if chunk.choices and len(chunk.choices) > 0:
+                delta = chunk.choices[0].delta
+                
+                # Accumulate regular content
+                if delta.get("content"):
+                    accumulated_content += delta["content"]
+                
+                # Accumulate reasoning/thinking content (for models like DeepSeek-R1, o1)
+                if delta.get("reasoning_content"):
+                    accumulated_reasoning += delta["reasoning_content"]
+                elif delta.get("thinking"):
+                    accumulated_reasoning += delta["thinking"]
+            
+            # Format as SSE and forward to client
+            chunk_json = chunk.model_dump_json()
+            yield f"data: {chunk_json}\n\n"
+        
+        # Send [DONE] message
+        yield "data: [DONE]\n\n"
+        
+        # Update session with accumulated response
+        if accumulated_content or accumulated_reasoning:
+            # For reasoning models, combine reasoning and content
+            # Store in a format that preserves both parts
+            full_content = accumulated_content
+            
+            # If there's reasoning content, we could either:
+            # 1. Store it separately in metadata
+            # 2. Prepend it to content with markers
+            # 3. Store only the final answer
+            # For now, we'll store only the final answer (accumulated_content)
+            # but log that reasoning was present
+            
+            if accumulated_reasoning:
+                logger.info(
+                    f"Reasoning model output detected",
+                    session_id=session_id,
+                    reasoning_length=len(accumulated_reasoning),
+                    content_length=len(accumulated_content)
+                )
+            
+            assistant_message = Message(
+                role="assistant",
+                content=full_content if full_content else accumulated_reasoning
+            )
+            session.conversation_history.append(assistant_message)
+            
+            # Estimate tokens (rough approximation)
+            # Include both reasoning and content in token count
+            total_content_length = len(accumulated_content) + len(accumulated_reasoning)
+            completion_tokens = total_content_length // 4
+            prompt_tokens = sum(len(msg.content) for msg in reduced_messages) // 4
+            total_tokens = prompt_tokens + completion_tokens
+            
+            session.total_tokens_used += total_tokens
+            await session_mgr.update_session(session)
+            
+            # Log completion
+            logger.log_completion(
+                session_id=session_id,
+                model=request.model,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens
+            )
+    
+    except Exception as e:
+        # Log error
+        logger.error(f"Streaming error: {str(e)}", session_id=session_id)
+        
+        # Send error in SSE format
+        error_data = {
+            "error": {
+                "message": str(e),
+                "type": "stream_error",
+                "code": "500"
+            }
+        }
+        yield f"data: {json.dumps(error_data)}\n\n"
 
 
 @app.get("/v1/models", response_model=ModelListResponse)
