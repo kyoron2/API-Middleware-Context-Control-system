@@ -5,6 +5,7 @@ from abc import ABC, abstractmethod
 
 from ..models.openai import Message
 from ..models.session import ContextConfig
+from ..models.adaptive_summarization import AdaptiveSummarizationConfig
 
 
 class ContextStrategy(ABC):
@@ -198,16 +199,90 @@ class SummarizationStrategy(ContextStrategy):
         return result, summary
 
 
+class AdaptiveSummarizationStrategy(ContextStrategy):
+    """Adaptive summarization strategy - intelligent content-aware summarization"""
+
+    def __init__(
+        self,
+        adaptive_config: AdaptiveSummarizationConfig,
+        session_id: str,
+        provider_manager=None
+    ):
+        """
+        Initialize adaptive summarization strategy
+        
+        Args:
+            adaptive_config: Adaptive summarization configuration
+            session_id: Session identifier
+            provider_manager: Provider manager for LLM API calls
+        """
+        from .adaptive_summarization_manager import AdaptiveSummarizationManager
+        
+        self.session_id = session_id
+        self.manager = AdaptiveSummarizationManager(
+            adaptive_config,
+            provider_manager
+        )
+
+    async def reduce(
+        self,
+        messages: List[Message],
+        config: ContextConfig
+    ) -> Tuple[List[Message], Optional[str]]:
+        """
+        Reduce context using adaptive summarization
+        
+        Args:
+            messages: List of messages to reduce
+            config: Context configuration
+            
+        Returns:
+            Tuple of (reduced messages, optional summary)
+        """
+        # Execute adaptive summarization
+        result = await self.manager.summarize(
+            messages,
+            self.session_id
+        )
+        
+        # Extract summary text from preserved content
+        summary_parts = []
+        if result.preserved_content.get("entities"):
+            entity_count = len(result.preserved_content["entities"])
+            summary_parts.append(f"{entity_count} entities preserved")
+        
+        if result.preserved_content.get("code_blocks"):
+            code_count = len(result.preserved_content["code_blocks"])
+            summary_parts.append(f"{code_count} code blocks preserved")
+        
+        if result.preserved_content.get("urls"):
+            url_count = len(result.preserved_content["urls"])
+            summary_parts.append(f"{url_count} URLs preserved")
+        
+        summary_text = ", ".join(summary_parts) if summary_parts else None
+        
+        return result.messages, summary_text
+
+
 class ContextManager:
     """Manage conversation context with reduction strategies"""
 
-    def __init__(self):
-        """Initialize context manager with available strategies"""
+    def __init__(self, provider_manager=None):
+        """
+        Initialize context manager with available strategies
+        
+        Args:
+            provider_manager: Provider manager for LLM API calls
+        """
+        self.provider_manager = provider_manager
         self.strategies = {
             "truncation": TruncationStrategy(),
             "sliding_window": SlidingWindowStrategy(),
             "summarization": SummarizationStrategy(self),
         }
+        
+        # Adaptive summarization managers per session
+        self._adaptive_managers = {}
 
     def estimate_tokens(self, messages: List[Message]) -> int:
         """
@@ -256,7 +331,9 @@ class ContextManager:
     async def apply_strategy(
         self,
         messages: List[Message],
-        config: ContextConfig
+        config: ContextConfig,
+        session_id: Optional[str] = None,
+        adaptive_config: Optional[AdaptiveSummarizationConfig] = None
     ) -> Tuple[List[Message], Optional[str]]:
         """
         Apply context reduction strategy
@@ -264,6 +341,8 @@ class ContextManager:
         Args:
             messages: Messages to potentially reduce
             config: Context configuration
+            session_id: Session identifier (required for adaptive summarization)
+            adaptive_config: Adaptive summarization configuration
             
         Returns:
             Tuple of (reduced messages, optional summary)
@@ -275,7 +354,22 @@ class ContextManager:
         if not await self.should_reduce(messages, config):
             return messages, None
         
-        # Get strategy
+        # Check for adaptive summarization
+        if config.reduction_mode == "adaptive_summarization":
+            if not adaptive_config or not adaptive_config.enabled:
+                # Fall back to simple summarization
+                config.reduction_mode = "summarization"
+            elif not session_id:
+                raise ValueError("session_id required for adaptive summarization")
+            else:
+                # Use adaptive summarization
+                strategy = self._get_adaptive_strategy(
+                    session_id,
+                    adaptive_config
+                )
+                return await strategy.reduce(messages, config)
+        
+        # Get standard strategy
         strategy = self.strategies.get(config.reduction_mode)
         if strategy is None:
             raise ValueError(f"Unsupported reduction mode: {config.reduction_mode}")
@@ -325,3 +419,41 @@ class ContextManager:
             strategy: Strategy implementation
         """
         self.strategies[name] = strategy
+    
+    def _get_adaptive_strategy(
+        self,
+        session_id: str,
+        adaptive_config: AdaptiveSummarizationConfig
+    ) -> AdaptiveSummarizationStrategy:
+        """
+        Get or create adaptive summarization strategy for a session
+        
+        Args:
+            session_id: Session identifier
+            adaptive_config: Adaptive summarization configuration
+            
+        Returns:
+            Adaptive summarization strategy
+        """
+        # Check if strategy already exists for this session
+        if session_id not in self._adaptive_managers:
+            self._adaptive_managers[session_id] = AdaptiveSummarizationStrategy(
+                adaptive_config,
+                session_id,
+                self.provider_manager
+            )
+        
+        return self._adaptive_managers[session_id]
+    
+    def clear_adaptive_session(self, session_id: str) -> None:
+        """
+        Clear adaptive summarization data for a session
+        
+        Args:
+            session_id: Session identifier
+        """
+        if session_id in self._adaptive_managers:
+            # Clear manager state
+            self._adaptive_managers[session_id].manager.clear_session(session_id)
+            # Remove manager
+            del self._adaptive_managers[session_id]
